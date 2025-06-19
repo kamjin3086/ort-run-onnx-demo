@@ -1,0 +1,23 @@
+[package]
+name = "ort_tauri_logic_demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = ["devtools"] }
+
+
+ort = { version = "2.0.0-rc.10", features = [ "load-dynamic" ] }
+tokenizers   = { version = "0.19.1", default-features = false, features = ["onig"] }
+ndarray      = { version = "0.15", features = ["serde"] }
+anyhow       = "1"
+once_cell    = "1.18.0"
+rayon        = "1.10.0"
+# CLI 辅助
+clap         = { version = "4", features = ["derive"] }
+
+# 或 1.7.1、1.7.0，任选>=1.6 且 <1.8
+base64ct = "=1.7.3"

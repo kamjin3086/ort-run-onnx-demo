@@ -8,8 +8,7 @@ pub struct OnnxState {
     pub session: Mutex<Option<Session>>,
 }
 
-/* ---------- 以下代码与主仓库保持一致，仅删掉 tauri 宏 ---------- */
-
+// Core implementation
 #[derive(serde::Serialize)]
 pub struct TokenizationOutput {
     pub input_ids: Vec<Vec<u32>>,
@@ -23,11 +22,11 @@ pub fn tokenize_batch(
     max_length: usize,
 ) -> Result<TokenizationOutput, String> { 
 
-    // 加载分词器文件
+    // Load tokenizer file
     let mut tokenizer = Tokenizer::from_file(&tokenizer_path)
-        .map_err(|e| format!("加载 tokenizer 失败: {e}"))?;
+        .map_err(|e| format!("Failed to load tokenizer: {e}"))?;
 
-    // 配置 padding & truncation
+    // Configure padding & truncation
     tokenizer
         .with_padding(Some(PaddingParams {
             strategy: PaddingStrategy::BatchLongest,
@@ -41,10 +40,10 @@ pub fn tokenize_batch(
         }))
         .map_err(|e| e.to_string())?;
 
-    // 编码批次
+    // Encode batch
     let encodings = tokenizer
         .encode_batch(texts, true)
-        .map_err(|e| format!("分词失败: {e}"))?;
+        .map_err(|e| format!("Tokenization failed: {e}"))?;
 
     let input_ids: Vec<Vec<u32>> = encodings.iter().map(|e| e.get_ids().to_vec()).collect();
     let attention_mask: Vec<Vec<u32>> = encodings
@@ -52,7 +51,7 @@ pub fn tokenize_batch(
         .map(|e| e.get_attention_mask().to_vec())
         .collect();
     
-    // 生成 token_type_ids，对于单个文本，所有位置都是0
+    // Generate token_type_ids (all zeros for single text)
     let token_type_ids: Vec<Vec<u32>> = input_ids
         .iter()
         .map(|ids| vec![0u32; ids.len()])
@@ -63,7 +62,6 @@ pub fn tokenize_batch(
         attention_mask,
         token_type_ids,
     })
-
 }
 
 #[derive(serde::Deserialize)]
@@ -77,7 +75,7 @@ pub fn init_onnx_session(model_path: String, state: &OnnxState) -> Result<(), St
     
     let mut guard = state.session.lock().map_err(|e| e.to_string())?;
 
-    // 若已存在会话先释放
+    // Release existing session if any
     if guard.is_some() {
         *guard = None;
     }
@@ -85,12 +83,11 @@ pub fn init_onnx_session(model_path: String, state: &OnnxState) -> Result<(), St
     let session = Session::builder()
         .map_err(|e| e.to_string())?
         .commit_from_file(&model_path)
-        .map_err(|e| format!("加载模型失败: {e}"))?;
+        .map_err(|e| format!("Failed to load model: {e}"))?;
 
     *guard = Some(session);
-    println!("✅ ONNX Session 已加载: {model_path}");
+    println!("ONNX Session loaded: {model_path}");
     Ok(())
-
 }
 
 pub fn generate_embedding(
@@ -98,9 +95,9 @@ pub fn generate_embedding(
     state: &OnnxState,
 ) -> Result<Vec<Vec<f32>>, String> { 
     let mut session_guard = state.session.lock().map_err(|e| e.to_string())?;
-    let session = session_guard.as_mut().ok_or("ONNX Session 未初始化")?;
+    let session = session_guard.as_mut().ok_or("ONNX Session not initialized")?;
 
-    // 转换为 ndarray
+    // Convert to ndarray
     let batch = input.input_ids.len();
     if batch == 0 {
         return Ok(vec![]);
@@ -114,7 +111,7 @@ pub fn generate_embedding(
     let mask_array = Array2::from_shape_vec((batch, seq_len), mask_flat.clone())
         .map_err(|e| e.to_string())?;
 
-    // 将 ndarray 转为 Tensor
+    // Convert ndarray to Tensor
     let ids_tensor = Tensor::<i64>::from_array(([batch, seq_len], ids_flat))
         .map_err(|e| e.to_string())?;
     let mask_tensor = Tensor::<i64>::from_array(([batch, seq_len], mask_flat))
@@ -122,7 +119,7 @@ pub fn generate_embedding(
     let token_type_tensor = Tensor::<i64>::from_array(([batch, seq_len], token_type_flat))
         .map_err(|e| e.to_string())?;
 
-    // 运行推理
+    // Run inference
     let outputs = session
         .run(ort::inputs![
             "input_ids" => &ids_tensor,
@@ -131,19 +128,19 @@ pub fn generate_embedding(
         ])
         .map_err(|e| e.to_string())?;
 
-    // 提取 token_embeddings
+    // Extract token_embeddings
     let hidden_state = outputs["token_embeddings"].try_extract_array::<f32>()
         .map_err(|e| e.to_string())?;
 
     let shape = hidden_state.shape();
     if shape.len() != 3 {
-        return Err(format!("不支持的输出维度: {:?}", shape));
+        return Err(format!("Unsupported output dimensions: {:?}", shape));
     }
     let hidden_size = shape[2];
 
-    // 平均池化
+    // Mean pooling
     let mut results: Vec<Vec<f32>> = Vec::with_capacity(batch);
-    let data = hidden_state.as_slice().ok_or("无法获取输出切片")?;
+    let data = hidden_state.as_slice().ok_or("Cannot get output slice")?;
     let mut idx = 0;
 
     for b in 0..batch {
@@ -171,5 +168,4 @@ pub fn generate_embedding(
     }
 
     Ok(results)
-
 }

@@ -10,16 +10,16 @@ static GLOBAL_STATE: Lazy<OnnxState> = Lazy::new(|| OnnxState {
 
 #[derive(Parser)]
 struct Args {
-    /// 要编码的文本
+    /// Text to be encoded
     #[arg(default_value = "")]
     text: String,
-    /// tokenizer.json 路径
+    /// Path to tokenizer.json
     #[clap(long, default_value = "models/tokenizer.json")]
     tokenizer: String,
-    /// onnx 模型路径
+    /// Path to ONNX model
     #[clap(long, default_value = "models/model.onnx")]
     model: String,
-    /// 最大长度
+    /// Maximum sequence length
     #[clap(long, default_value_t = 256)]
     max_len: usize,
 }
@@ -29,18 +29,18 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    /* 1. 加载 / 复用 Session */
+    /* 1. Initialize/reuse ONNX Session */
     logic::init_onnx_session(args.model.clone(), &GLOBAL_STATE)
         .map_err(|e| anyhow!(e))?;
 
-    /* 2. 分词 */
+    /* 2. Tokenization */
     let tok = logic::tokenize_batch(
         vec![args.text],
         args.tokenizer,
         args.max_len,
     ).map_err(|e| anyhow!(e))?;
 
-    /* 3. 生成 embedding */
+    /* 3. Generate embedding */
     let emb = logic::generate_embedding(
         EmbeddingInput {
             input_ids: tok.input_ids.iter().map(|v| v.iter().map(|&x| x as i64).collect()).collect(),
